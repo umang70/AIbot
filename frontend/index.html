@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+
+  <body class="bg-gray-900 text-white">
+       
+    <div class="container mx-auto max-w-3xl flex flex-col h-screen " >
+
+      
+      <div class="flex-1 overflow-y-auto p-6 space-y-4" id="chat-container"   >
+
+        <!-- user msg -->
+        <div class="flex justify-end"  >
+          <!-- <div class="bg-neutral-800 p-3 rounded-xl max-w-xs" >
+            user
+           
+          </div> -->
+        </div>
+
+        <!-- assistant msg -->
+        <div class="flex justify-start">
+          <div class="p-3 rounded-xl max-w-xs">
+         
+          </div>
+        </div>
+
+      </div>
+
+     
+      <div class="p-4 border-t border-neutral-700 bg-gray-900">
+        <div class="flex items-center gap-3">
+
+          <textarea 
+            class="flex-1 bg-neutral-800 text-white p-3 rounded-xl resize-none h-12 outline-none" 
+            id="input"
+            placeholder="Ask something..."
+          ></textarea>
+
+          <button
+            id="askBtn"
+            class="relative px-8 py-3 bg-black text-white font-semibold rounded-lg border-2 border-purple-500 hover:border-purple-400 transition-all duration-300 hover:shadow-[0_0_20px_10px_rgba(168,85,247,0.6)] active:scale-95 active:shadow-[0_0_10px_5px_rgba(168,85,247,0.4)] group"
+          >
+            <span>Ask</span>
+            <span class="absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 bg-gradient-to-r from-purple-500/20 to-indigo-500/20"></span>
+          </button>
+
+        </div>
+      </div>
+
+    </div>
+
+    <script src="script.js"></script>
+
+  </body>
+</html>
