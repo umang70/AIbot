@@ -1,4 +1,4 @@
-🌐 AI Chatbot with Groq + Tavily Search + Memory
+🌐 AI Chatbot with Groq + web Search + Memory
 
 A lightweight and powerful AI chatbot built using Groq LLM, Tavily Web Search, and NodeCache conversation memory.
 Supports real-time web search, tool calling, and thread-based memory.
