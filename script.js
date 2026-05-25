@@ -4,8 +4,16 @@ const imageBtn = document.getElementById("imageBtn");
 const modeIndicator = document.getElementById("modeIndicator");
 const chatContainer = document.getElementById("chat-container");
 
-// ✅ Use localhost for local testing
-const API_URL = "https://chatai-with-websearch.onrender.com";
+// Use localhost when running the page locally, otherwise use the deployed backend.
+const API_URL = (() => {
+  const hostname = window.location.hostname;
+
+  if (!hostname || hostname === "localhost" || hostname === "127.0.0.1") {
+    return "http://localhost:4300";
+  }
+
+  return "https://chatai-with-websearch.onrender.com";
+})();
 
 // 🎨 Toggle state for image generation mode
 let isImageMode = false;

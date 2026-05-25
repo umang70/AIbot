@@ -1,7 +1,7 @@
-🌐 AI Chatbot with Groq + web Search + Memory
+🌐 AI Chatbot with Hugging Face + web Search + Memory
 
-A lightweight and powerful AI chatbot built using Groq LLM, Tavily Web Search, and NodeCache conversation memory.
-Supports real-time web search, tool calling, and thread-based memory.
+A lightweight and powerful AI chatbot built using Hugging Face DeepSeek R1 for text, Hugging Face image generation, Tavily Web Search, and NodeCache conversation memory.
+Supports automatic web search, text chat, image generation, and thread-based memory.
 
 🚀 Features
 
@@ -10,7 +10,9 @@ Supports real-time web search, tool calling, and thread-based memory.
 
 🧠 Per-thread memory (remembers past messages for 24 hours)
 
-🤖 Groq Llama 3.1 model for fast responses
+🤖 DeepSeek R1 distill model for text responses
+
+🎨 Hugging Face text-to-image generation
 
 ⚙️ Automatic tool calling (LLM decides when to search the web)
 
@@ -27,20 +29,24 @@ cd your-repo
 npm install
 
 3️⃣ Create .env file
-GROQ_API_KEY=your_groq_key
 TAVILY_API_KEY=your_tavily_key
+HUGGINGFACE_API_TOKEN=your_hugging_face_token
+HUGGINGFACE_TEXT_MODEL=deepseek-ai/DeepSeek-R1-Distill-Qwen-7B
+
+Optional:
+HUGGINGFACE_IMAGE_MODEL=black-forest-labs/FLUX.1-schnell
 
 
 Get keys:
 
-Groq key → https://console.groq.com/keys
-
 Tavily key → https://app.tavily.com/api-key
+
+Hugging Face token → https://huggingface.co/settings/tokens
 
 🧩 Project Structure
 /project
 │── index.js       # main server file (optional)
-│── chatbot.js     # your chatbot logic (Groq + Tavily + memory)
+│── chatbot.js     # your chatbot logic (Hugging Face + Tavily + memory)
 │── package.json
 │── .env
 │── README.md
@@ -70,18 +76,11 @@ You can create multiple user sessions:
 generate("hello", "userA");
 generate("hello", "userB");
 
-🌍 How Web Search Works
+### How Web Search Works
 
-The LLM decides automatically when it needs web search using the tool_calls feature.
+The text model decides automatically when it needs web search.
 
-If it requests:
-
-{ "name": "webSearch", "arguments": { "query": "something" } }
-
-
-→ your code runs webSearch()
-→ gives fresh info back to the model
-→ second pass generates a final answer
+When a question looks factual, recent, or time-sensitive, the backend runs `webSearch()` first, then sends the fresh results back to the model for the final answer.
 
 📡 Example API Endpoint
 
@@ -107,7 +106,7 @@ app.listen(4300, () => console.log("Server running on 4300"));<img width="2816" 
 
 Node.js
 
-Groq SDK
+OpenAI-compatible Hugging Face router
 
 Tavily Search
 

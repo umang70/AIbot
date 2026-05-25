@@ -49,13 +49,13 @@ dotenv.config();
 
 const app = express();
 
-// ✅ Use PORT from environment or default to 4300
+// Use PORT from environment or default to 4300
 const PORT = process.env.PORT || 4300;
 
 app.use(cors());
 app.use(express.json());
 
-// ✅ Simple health check
+// Simple health check
 app.get("/", (req, res) => {
   res.send("Backend is running ✅");
 });
@@ -94,7 +94,7 @@ app.post("/generate-image", async (req, res) => {
   }
 });
 
-// 🧠 Clear memory endpoint
+//  Clear memory endpoint
 app.post("/clear-memory", (req, res) => {
   try {
     const { threadId = "default" } = req.body;
@@ -107,5 +107,5 @@ app.post("/clear-memory", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(` Server running at http://localhost:${PORT}`);
 });

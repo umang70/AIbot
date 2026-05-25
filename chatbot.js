@@ -1,4 +1,3 @@
-import Groq from "groq-sdk";
 import dotenv from "dotenv";
 import { tavily } from "@tavily/core";
 import NodeCache from "node-cache";
@@ -6,14 +5,16 @@ import OpenAI from "openai";
 
 dotenv.config();
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const tvly = tavily({ apiKey: process.env.TAVILY_API_KEY });
-
-// Initialize Nebius OpenAI client for image generation
-const nebius = new OpenAI({
-  baseURL: "https://api.tokenfactory.nebius.com/v1/",
-  apiKey: process.env.NEBIUS_API_KEY,
+const hfClient = new OpenAI({
+  baseURL: "https://router.huggingface.co/v1",
+  apiKey: process.env.HUGGINGFACE_API_TOKEN,
 });
+const huggingFaceToken = process.env.HUGGINGFACE_API_TOKEN;
+const huggingFaceTextModel =
+  process.env.HUGGINGFACE_TEXT_MODEL || "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B";
+const huggingFaceImageModel =
+  process.env.HUGGINGFACE_IMAGE_MODEL || "black-forest-labs/FLUX.1-schnell";
 
 // Store conversation history per thread/user
 const conversationMemory = new NodeCache({ stdTTL: 60 * 60 * 24 }); // 24 hour expiry
@@ -36,22 +37,107 @@ Snippet: ${r.content?.slice(0, 200) || ""}`;
   return `Web summary (top results):\n${lines.join("\n\n")}`;
 }
 
-// 🎨 Generate image using Nebius API
+function extractJsonObject(text) {
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+
+  if (start === -1 || end === -1 || end <= start) {
+    return null;
+  }
+
+  return text.slice(start, end + 1);
+}
+
+function shouldUseWebSearchFallback(question) {
+  return /\b(latest|current|today|now|recent|news|launch|price|stock|score|winner|won|released|released on|who is|when did|this year|yesterday|tomorrow)\b/i.test(
+    question
+  );
+}
+
+async function callTextModel(messages, temperature = 0.2) {
+  const response = await hfClient.chat.completions.create({
+    model: huggingFaceTextModel,
+    temperature,
+    messages,
+  });
+
+  return response.choices?.[0]?.message?.content?.trim() || "";
+}
+
+async function decideSearchPlan(userQuestion, conversationHistory) {
+  const plannerMessages = [
+    {
+      role: "system",
+      content: `Decide whether the user needs a web search.
+Return only valid JSON with this shape:
+{"action":"answer"|"webSearch","query":"string"}
+
+Use webSearch for factual, recent, time-sensitive, or live information.
+Use answer for creative, opinion, personal, or general explanation questions.
+If you choose answer, set query to an empty string.`,
+    },
+    ...conversationHistory.slice(-6),
+    {
+      role: "user",
+      content: userQuestion,
+    },
+  ];
+
+  const plannerText = await callTextModel(plannerMessages, 0);
+  const jsonText = extractJsonObject(plannerText) || plannerText;
+
+  try {
+    const parsed = JSON.parse(jsonText);
+    if (parsed?.action === "webSearch" || parsed?.action === "answer") {
+      return {
+        action: parsed.action,
+        query:
+          typeof parsed.query === "string" && parsed.query.trim()
+            ? parsed.query.trim()
+            : userQuestion,
+      };
+    }
+  } catch (err) {
+    // Fall through to heuristic planning below.
+  }
+
+  if (shouldUseWebSearchFallback(userQuestion)) {
+    return { action: "webSearch", query: userQuestion };
+  }
+
+  return { action: "answer", query: "" };
+}
+
+// 🎨 Generate image using Hugging Face Inference API
 async function generateImage(prompt) {
   console.log("🎨 Generating image with prompt:", prompt);
   
   try {
-    const response = await nebius.images.generate({
-      model: "black-forest-labs/flux-schnell",
-      prompt: prompt,
-      n: 1,
-      size: "1024x1024",
-    });
-
-    if (response.data && response.data.length > 0) {
-      return response.data[0].url;
+    if (!huggingFaceToken) {
+      throw new Error("HUGGINGFACE_API_TOKEN is not set");
     }
-    throw new Error("No image generated");
+
+    const response = await fetch(
+      `https://router.huggingface.co/hf-inference/models/${huggingFaceImageModel}`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${huggingFaceToken}`,
+          "Content-Type": "application/json",
+          Accept: "image/png",
+        },
+        body: JSON.stringify({ inputs: prompt }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Hugging Face request failed (${response.status}): ${errorText}`);
+    }
+
+    const contentType = response.headers.get("content-type") || "image/png";
+    const imageBuffer = Buffer.from(await response.arrayBuffer());
+    return `data:${contentType};base64,${imageBuffer.toString("base64")}`;
   } catch (err) {
     console.error("❌ Image generation error:", err.message);
     throw new Error(`Image generation failed: ${err.message}`);
@@ -61,92 +147,46 @@ async function generateImage(prompt) {
 async function askOnce(userQuestion, threadId) {
   // Get conversation history
   let conversationHistory = conversationMemory.get(threadId) || [];
+  const plan = await decideSearchPlan(userQuestion, conversationHistory);
 
-  const baseMessages = [
-    {
-      role: "system",
-      content: `You are a friendly, helpful AI assistant with memory of previous conversations.
-Use the webSearch tool for anything that requires up-to-date or factual information.  
-Do not guess or make up facts.  
-Speak casually but stay accurate.  
-If the user asks something personal, creative, or opinion-based, reply normally without web search.  
-If the user asks about real-world events, companies, technology, dates, launches, or news, ALWAYS perform a web search first for recent information.`,
-    },
-    ...conversationHistory,
-    {
-      role: "user",
-      content: userQuestion,
-    },
-  ];
-
-  // 1️⃣ First call – let LLM decide if it needs webSearch
-  const first = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
-    temperature: 0,
-    messages: baseMessages,
-    tools: [
+  if (plan.action === "answer") {
+    const answerMessages = [
       {
-        type: "function",
-        function: {
-          name: "webSearch",
-          description: "Search the recent info on the internet",
-          parameters: {
-            type: "object",
-            properties: {
-              query: {
-                type: "string",
-                description: "Search query, e.g. 'price of iPhone 17'",
-              },
-            },
-            required: ["query"],
-          },
-        },
+        role: "system",
+        content: `You are a friendly, helpful AI assistant with memory of previous conversations.
+      Do not guess or make up facts.
+      Speak casually but stay accurate.
+      Answer the user's message directly and concisely.
+      Do not add preambles like "it seems" or "here's".
+      If the user asks something personal, creative, or opinion-based, reply normally.
+      If the user asks about real-world events, companies, technology, dates, launches, or news, rely on web search when provided.`,
       },
-    ],
-    tool_choice: "auto",
-  });
+      ...conversationHistory,
+      {
+        role: "user",
+        content: userQuestion,
+      },
+    ];
 
-  // ✅ Safe null check
-  const toolCalls = first.choices?.[0]?.message?.tool_calls;
+    const answer = await callTextModel(answerMessages, 0.4);
 
-  // If LLM didn't request a tool → just answer normally
-  if (!toolCalls || toolCalls.length === 0) {
-    const answer = first.choices[0].message.content;
-    
-    // Save to memory
     conversationHistory.push({ role: "user", content: userQuestion });
     conversationHistory.push({ role: "assistant", content: answer });
     conversationMemory.set(threadId, conversationHistory);
-    
+
     return answer;
   }
 
-  const toolCall = toolCalls[0];
-  const fnName = toolCall.function.name;
-  
-  // ✅ Safe JSON parse with error handling
-  let fnArgs;
-  try {
-    fnArgs = JSON.parse(toolCall.function.arguments);
-  } catch (err) {
-    console.error("❌ Failed to parse tool arguments:", err);
-    throw new Error("Invalid tool arguments from LLM");
-  }
+  const toolResultText = await webSearch({ query: plan.query });
 
-  let toolResultText = "";
-
-  if (fnName === "webSearch") {
-    toolResultText = await webSearch(fnArgs);
-  }
-
-  // 2️⃣ Second call – use web result to answer nicely
   const secondMessages = [
     {
       role: "system",
-      content: `You have access to web search results via the tool output.
-Use them to answer the user's question accurately.
-Do NOT call webSearch again.
-If data is unclear, say so. Keep your answer casual, short, and clear.`,
+      content: `You have access to web search results.
+    Use them to answer the user's question accurately.
+    Do not invent facts.
+    Keep the response casual, short, clear, and direct.
+    Do not mention internal reasoning or the search process.`,
     },
     ...conversationHistory,
     {
@@ -154,26 +194,13 @@ If data is unclear, say so. Keep your answer casual, short, and clear.`,
       content: userQuestion,
     },
     {
-      role: "assistant",
-      tool_calls: [toolCall],
-    },
-    {
-      role: "tool",
-      tool_call_id: toolCall.id,
-      name: fnName,
-      content: toolResultText,
+      role: "system",
+      content: `Web search results:\n${toolResultText}`,
     },
   ];
 
-  const second = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
-    temperature: 0,
-    messages: secondMessages,
-  });
-
-  const answer = second.choices[0].message.content;
+  const answer = await callTextModel(secondMessages, 0.3);
   
-  // Save to memory
   conversationHistory.push({ role: "user", content: userQuestion });
   conversationHistory.push({ role: "assistant", content: answer });
   conversationMemory.set(threadId, conversationHistory);
